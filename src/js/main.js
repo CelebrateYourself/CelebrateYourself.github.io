@@ -1,7 +1,10 @@
 // app state
 const STATE = {
-    HOVER_RADIUS: 10,
-    POINT_RADIUS: 5,
+    CELL: 0,
+    LINE_WIDTH: 0,
+    HOVER_RADIUS: 0,
+    POINT_RADIUS: 0,
+    PADDING: 0,
 
     canvas: null,
     root: null,
@@ -20,6 +23,19 @@ const STATE = {
     height: 0,
 }
 
+
+const _getCanvasPoint = (e) => {
+    let x, y
+    
+    if(e.type === 'touchstart' || e.type === 'touchend' || e.type === 'touchmove'){
+        x = Math.round(e.changedTouches[0].pageX)
+        y = Math.round(e.changedTouches[0].pageY)
+    } else {
+        x = e.pageX
+        y = e.pageY
+    }
+    return [x, y]
+}
 
 const _equalsCoors = (p1, p2) => p1[0] === p2[0] && p1[1] === p2[1]
 
@@ -52,14 +68,25 @@ const _pointFromCoord = (points, coord, radius) => {
 
 
 const _onClick = function(e) {
-
-    const coord = [e.clientX, e.clientY],
+    const coord = _getCanvasPoint(e),
           points = [...this.points, ...this.anchors],
           existsPoint = _pointFromCoord(points, coord, this.HOVER_RADIUS)
 
     if(existsPoint){
+        // mobile - убрать фокус с нажатой точки
+        this.hovered = null
         return    
     }
+
+    if(
+          (coord[0] < this.PADDING) 
+       || (coord[0] > this.width - this.PADDING) 
+       || (coord[1] < this.PADDING) 
+       || (coord[1] > this.height - this.PADDING)
+     ){
+        this.dragged = null
+        this.hovered = null
+      }
 
     if(this.points.length){
         const prevP = this.points[this.points.length - 1],
@@ -88,6 +115,12 @@ const _onContext = function(e){
     }
 
     let lines = this.lines
+
+    // одна точка
+    if(!lines.length){
+        this.points.length = 0
+        return
+    }
 
     for(let i = 0, len = lines.length; i < len; i += 1){
         let line = lines[i]
@@ -150,7 +183,7 @@ const _onContext = function(e){
 }
 
 const _onHover = function(e){
-    const coord = [e.clientX, e.clientY],
+    const coord = _getCanvasPoint(e),
           points = [...this.points, ...this.anchors]
           
     this.hovered = _pointFromCoord(points, coord, this.HOVER_RADIUS)
@@ -165,10 +198,10 @@ const _clear = (ctx, size) => {
     ctx.closePath()
 }
 
-const _drawCurve = (ctx, line) => {
+const _drawCurve = (ctx, line, width) => {
     ctx.beginPath()
     ctx.strokeStyle = "#991";
-    ctx.lineWidth = 4
+    ctx.lineWidth = width
     ctx.lineCap = 'round'
     ctx.moveTo(...line.from)
     ctx.bezierCurveTo(...line.cp1, ...line.cp2, ...line.to)
@@ -225,7 +258,7 @@ const _drawText = (state) => {
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
     ctx.fillText(
-        'Mouse: left - create, right - delete',
+        'Click - add, right click or long touch - remove',
         padding,
         padding, 
         state.width - padding * 2
@@ -262,7 +295,7 @@ const _draw = (state) => {
     
     state.lines.forEach(line => {
         _drawHelpersLines(ctx, line)
-        _drawCurve(ctx, line)
+        _drawCurve(ctx, line, state.LINE_WIDTH)
     })
 
 
@@ -281,16 +314,29 @@ const _frame = function(state){
     requestAnimationFrame(() => _frame(state))
 }
 
+
 const _attachEvents = (state) => {
     const canvas = state.canvas,
           onDrag = (e) => {
+              const coord = _getCanvasPoint(e)
+
+              if(
+                  (coord[0] < state.PADDING) 
+               || (coord[0] > state.width - state.PADDING) 
+               || (coord[1] < state.PADDING) 
+               || (coord[1] > state.height - state.PADDING)
+            ){
+              state.dragged = null
+              state.hovered = null
+            }
+
               if(state.dragged){
-                  state.dragged[0] = e.clientX
-                  state.dragged[1] = e.clientY
+                  state.dragged[0] = coord[0]
+                  state.dragged[1] = coord[1]
               }
           },
           onDragStart = (e) => {
-            const point = [e.clientX, e.clientY],
+            const point = _getCanvasPoint(e),
             coords = [...state.points, ...state.anchors]
       
             coords.forEach(c => {
@@ -300,8 +346,13 @@ const _attachEvents = (state) => {
             })
 
             canvas.addEventListener('mousemove', onDrag)
+            canvas.addEventListener('touchmove', onDrag)
         }
         
+    canvas.addEventListener('mouseleave', (e) => { 
+        state.dragged = null
+        state.hovered = null
+    })
     canvas.addEventListener('contextmenu', _onContext.bind(state))
     canvas.addEventListener('click', _onClick.bind(state))
     canvas.addEventListener('mousemove', _onHover.bind(state))
@@ -311,6 +362,20 @@ const _attachEvents = (state) => {
         canvas.removeEventListener('mousemove', onDrag)
         state.dragged = null
     })
+    // Mobile
+    canvas.addEventListener('touchstart', (e) => {
+        (_onHover.bind(state))(e)
+        onDragStart(e)
+    })
+    canvas.addEventListener('touchend', (e) => {
+        canvas.removeEventListener('mousemove', onDrag)
+        canvas.removeEventListener('touchmove', onDrag)
+        state.hovered = null
+        state.dragged = null
+    })
+    // фиксация холста на mobile
+    canvas.addEventListener('touchmove', (e) => e.preventDefault())
+    canvas.addEventListener('touchcancel', (e) => e.preventDefault())
 }
 
 const run = (state) => {
@@ -319,7 +384,14 @@ const run = (state) => {
           root = document.querySelector('#app'),
           styles = window.getComputedStyle(root),
           width = parseFloat(styles.width),
-          height = parseFloat(styles.height)
+          height = parseFloat(styles.height),
+          cell = Math.max(6, Math.round(Math.min(width, height) * 0.01))
+
+    state.CELL = cell
+    state.POINT_RADIUS = cell
+    state.PADDING = cell * 2
+    state.HOVER_RADIUS = cell * 2
+    state.LINE_WIDTH = Math.floor(cell * 0.75)
 
     canvas.width = width
     canvas.height = height
