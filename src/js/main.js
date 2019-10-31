@@ -1,5 +1,6 @@
 // app state
 const STATE = {
+    UNIT: 0,
     CELL: 0,
     LINE_WIDTH: 0,
     HOVER_RADIUS: 0,
@@ -73,8 +74,6 @@ const _onClick = function(e) {
           existsPoint = _pointFromCoord(points, coord, this.HOVER_RADIUS)
 
     if(existsPoint){
-        // mobile - убрать фокус с нажатой точки
-        this.hovered = null
         return    
     }
 
@@ -86,6 +85,7 @@ const _onClick = function(e) {
      ){
         this.dragged = null
         this.hovered = null
+        return
       }
 
     if(this.points.length){
@@ -102,6 +102,7 @@ const _onClick = function(e) {
         this.lines.push(line)
     }
     this.points.push(coord)
+    this.hovered = coord
 }
 
 const _onContext = function(e){
@@ -113,6 +114,8 @@ const _onContext = function(e){
     if(!point){
         return
     }
+
+    this.hovered = null
 
     let lines = this.lines
 
@@ -269,7 +272,7 @@ const _drawText = (state) => {
 
 const _drawGrid = (state) => {
     const ctx = state.ctx,
-          size = state.HOVER_RADIUS
+          size = state.CELL
 
     ctx.beginPath()
     ctx.lineWidth = 1
@@ -385,13 +388,13 @@ const run = (state) => {
           styles = window.getComputedStyle(root),
           width = parseFloat(styles.width),
           height = parseFloat(styles.height),
-          cell = Math.max(6, Math.round(Math.min(width, height) * 0.01))
+          unit = Math.max(6, Math.round(Math.min(width, height) * 0.01))
 
-    state.CELL = cell
-    state.POINT_RADIUS = cell
-    state.PADDING = cell * 2
-    state.HOVER_RADIUS = cell * 2
-    state.LINE_WIDTH = Math.floor(cell * 0.75)
+    state.CELL = unit * 2
+    state.POINT_RADIUS = unit
+    state.PADDING = unit * 2
+    state.HOVER_RADIUS = unit * 2
+    state.LINE_WIDTH = Math.floor(unit * 0.75)
 
     canvas.width = width
     canvas.height = height
